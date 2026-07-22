@@ -1,16 +1,36 @@
 -- ============================================================================
 -- TICKET-ADV010 — VWAP per instrument per day (window function)
 -- ============================================================================
-SELECT DISTINCT
+SELECT
+    t.id,
+    t.trade_ref,
     t.instrument_id,
     t.trade_date,
-    SUM(t.price * t.quantity) OVER (PARTITION BY t.instrument_id, t.trade_date)
-        / NULLIF(SUM(t.quantity) OVER (PARTITION BY t.instrument_id, t.trade_date), 0)
-            AS vwap
+    t.quantity,
+    t.price,
+    (t.price * t.quantity) AS notional,
+
+    SUM(t.price * t.quantity)
+        OVER (
+            PARTITION BY t.instrument_id, t.trade_date
+        )
+    /
+    NULLIF(
+        SUM(t.quantity)
+            OVER (
+                PARTITION BY t.instrument_id, t.trade_date
+            ),
+        0
+    ) AS vwap
+
 FROM trades t
+
 WHERE t.deleted_at IS NULL
-  AND t.asset_class = 'EQUITY'
-ORDER BY t.trade_date DESC, t.instrument_id;
+
+ORDER BY
+    t.trade_date,
+    t.instrument_id,
+    t.id;
 
 
 -- ============================================================================
@@ -39,13 +59,34 @@ WITH RECURSIVE trade_lifecycle AS (
         CASE tl.step
             WHEN 1 THEN 'CONFIRMED'
             WHEN 2 THEN 'SETTLED'
-            WHEN 3 THEN 'RECONCILED'
-        END                                          AS state,
-        s.settlement_date::timestamp                  AS at_ts,
-        s.status                                      AS detail
-    FROM trade_lifecycle tl
-    JOIN settlements s ON s.trade_id = tl.trade_id
-    WHERE tl.step < 4
+            WHEN 3 THEN 'RECON_BREAK'
+            WHEN 4 THEN 'RESOLVED'
+    
+        END,
+        CASE tl.step
+
+            WHEN 1 THEN 'CONFIRMED'
+
+            WHEN 2 THEN s.status
+
+            WHEN 3 THEN rb.status
+
+            WHEN 4 THEN 'RESOLVED'
+        END
+    
+ FROM trade_lifecycle tl
+
+    JOIN trades t
+      ON t.id = tl.trade_id
+
+    LEFT JOIN settlements s
+      ON s.trade_id = tl.trade_id
+
+    LEFT JOIN recon_breaks rb
+      ON rb.trade_id = tl.trade_id
+
+    WHERE tl.step < 5
+
 )
 SELECT * FROM trade_lifecycle
 ORDER BY trade_id, step;
@@ -57,10 +98,29 @@ ORDER BY trade_id, step;
 -- ============================================================================
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_recon_summary;
 
+SELECT
+    trade_date,
+    region,
+    asset_class,
+    total_trades,
+    matched_trades,
+    open_breaks,
+    gross_notional,
+    match_rate_pct
+FROM mv_daily_recon_summary
+ORDER BY trade_date DESC;
+
 
 -- ============================================================================
 -- ADV009 — JSONB lookup: which instruments have sector = 'Banking'?
 -- ============================================================================
-SELECT id, symbol, metadata
+EXPLAIN ANALYZE
+
+SELECT
+    id,
+    symbol,
+    metadata
+
 FROM instruments
-WHERE metadata @> '{"sector":"Banking"}'::jsonb;
+
+WHERE metadata @> '{"sector":"Banking"}';
