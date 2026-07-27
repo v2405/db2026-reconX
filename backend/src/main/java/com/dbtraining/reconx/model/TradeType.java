@@ -2,6 +2,7 @@ package com.dbtraining.reconx.model;
 
 import java.time.LocalDate;
 import java.util.Comparator;
+import java.util.Objects;
 
 /**
  * ============================================================================
@@ -44,12 +45,18 @@ public sealed interface TradeType
     /** Discriminator for switch expressions and persistence mapping. */
     AssetClass assetClass();
 
-    Comparator<TradeType> NATURAL = Comparator
-            .comparing(TradeType::tradeDate).reversed()
-            .thenComparing(t -> t.tradeRef().value());
+    Comparator<TradeType> NATURAL =
+            Comparator.comparing(
+                            TradeType::tradeDate,
+                            Comparator.reverseOrder()
+                    )
+                    .thenComparing(
+                            trade -> trade.tradeRef().value()
+                    );
 
     @Override
     default int compareTo(TradeType other) {
+        Objects.requireNonNull(other, "other trade must not be null");
         return NATURAL.compare(this, other);
     }
 
