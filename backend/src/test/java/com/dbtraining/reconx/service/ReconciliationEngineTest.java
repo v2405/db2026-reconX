@@ -3,6 +3,8 @@ package com.dbtraining.reconx.service;
 import com.dbtraining.reconx.dto.ReconResult;
 import com.dbtraining.reconx.model.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,6 +22,15 @@ class ReconciliationEngineTest {
     @Test
     void testReconcile_exactMatch_returnsMatched() {
         // TODO(TICKET-ADV040): two identical EquityTrades + EXACT rule -> one ReconResult with status MATCHED.
+        @Test
+        void testReconcile_emptyInternal_returnsEmpty() {        
+            List<ReconResult> result = engine.reconcile(
+                    List.of(),
+                    List.of(),
+                    ReconciliationRule.EXACT
+            );        
+            assertThat(result).isEmpty();
+        }
         EquityTrade internal = equity("SAP-20260603-0001", "100.00", "10");
         EquityTrade external = equity("SAP-20260603-0001", "100.00", "10");
 
@@ -38,6 +49,28 @@ class ReconciliationEngineTest {
     @Test
     void testReconcile_priceTolerance_withinThreshold() {
         // TODO(TICKET-ADV041): prices 100.00 vs 100.50 + PRICE_TOLERANCE_1PCT rule -> status MATCHED.
+        @ParameterizedTest
+    @CsvSource({
+        "100.00,100.50",
+        "100.00,100.90",
+        "100.00,100.99"
+    })
+void testReconcile_priceTolerance_withinThreshold(String internalPrice,
+                                                  String externalPrice) {
+
+    EquityTrade internal = equity("SAP-20260603-0002", internalPrice, "10");
+    EquityTrade external = equity("SAP-20260603-0002", externalPrice, "10");
+
+    List<ReconResult> result = engine.reconcile(
+            List.of(internal),
+            List.of(external),
+            ReconciliationRule.PRICE_TOLERANCE_1PCT
+    );
+
+    assertThat(result).hasSize(1);
+    assertThat(result.get(0).status())
+            .isEqualTo(ReconResult.Status.MATCHED);
+}
         EquityTrade internal = equity("SAP-20260603-0002", "100.00", "10");
         EquityTrade external = equity("SAP-20260603-0002", "100.50", "10");
 
